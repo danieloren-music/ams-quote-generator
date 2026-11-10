@@ -18,8 +18,14 @@ export async function geminiJson<T>(o: { system: string; parts: GeminiPart[]; sc
     signal: AbortSignal.timeout(55_000),
   });
   if (!res.ok) {
-    console.error('gemini http', res.status);
-    throw new UserError('שירות ה-AI החזיר שגיאה. נסו שוב בעוד רגע');
+    const body = await res.text().catch(() => '');
+    console.error('gemini http', res.status, model, body.slice(0, 500));
+    if (res.status === 400 && /API key/i.test(body)) throw new UserError('מפתח GEMINI_API_KEY לא תקין. בדקו אותו ב-Vercel והריצו Redeploy');
+    if (res.status === 400) throw new UserError(`בקשה לא תקינה ל-AI (מודל: ${model}). בדקו את GEMINI_MODEL`);
+    if (res.status === 401 || res.status === 403) throw new UserError('למפתח GEMINI_API_KEY אין הרשאה. ודאו שהמפתח פעיל ב-Google AI Studio');
+    if (res.status === 404) throw new UserError(`המודל "${model}" לא נמצא. בדקו את GEMINI_MODEL`);
+    if (res.status === 429) throw new UserError('חרגתם ממכסת ה-AI. נסו שוב בעוד דקה');
+    throw new UserError(`שירות ה-AI החזיר שגיאה (${res.status}). נסו שוב בעוד רגע`);
   }
   const json = await res.json();
   const text = json?.candidates?.[0]?.content?.parts?.map((p: { text?: string }) => p.text ?? '').join('') ?? '';
