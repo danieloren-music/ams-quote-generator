@@ -22,12 +22,24 @@ async function discoverModel(key: string): Promise<string | null> {
 }
 
 async function callGemini(key: string, model: string, body: unknown) {
-  return fetch(`${BASE}/models/${encodeURIComponent(model)}:generateContent`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(55_000),
-  });
+  try {
+    return await fetch(`${BASE}/models/${encodeURIComponent(model)}:generateContent`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(50_000),
+    });
+  } catch (e) {
+    const n = (e as Error)?.name;
+    console.error('gemini fetch', n, (e as Error)?.message);
+    if (n === 'TimeoutError' || n === 'AbortError') throw new UserError('ה-AI לא הגיב בזמן. נסו שוב, ההתקדמות שנשמרה לא תאבד');
+    throw new UserError('אין תקשורת עם שירות ה-AI. נסו שוב בעוד רגע');
+  }
+}
+
+/** מודלי Gemini 3 "חושבים" כברירת מחדל, וזה איטי מאוד לסיווג פשוט. מצמצמים את החשיבה. */
+function thinkingFor(model: string): Record<string, unknown> {
+  return /^gemini-2\./.test(model) ? { thinkingBudget: 0 } : { thinkingLevel: 'low' };
 }
 
 /** קריאה ל-Gemini עם פלט JSON מובנה. רץ בצד שרת בלבד; המפתח לא נחשף ללקוח. */
@@ -35,21 +47,30 @@ export async function geminiJson<T>(o: { system: string; parts: GeminiPart[]; sc
   const key = process.env.GEMINI_API_KEY;
   if (!key) throw new UserError('לא הוגדר GEMINI_API_KEY בשרת');
   let model = discovered || process.env.GEMINI_MODEL || 'gemini-flash-latest';
-  const body = {
+  const build = (m: string, thinking: boolean) => ({
     systemInstruction: { parts: [{ text: o.system }] },
     contents: [{ role: 'user', parts: o.parts }],
-    generationConfig: { responseMimeType: 'application/json', responseSchema: o.schema, temperature: 0 },
-  };
-  let res = await callGemini(key, model, body);
+    generationConfig: {
+      responseMimeType: 'application/json', responseSchema: o.schema, temperature: 0,
+      ...(thinking ? { thinkingConfig: thinkingFor(m) } : {}),
+    },
+  });
+  let thinking = true;
+  let res = await callGemini(key, model, build(model, thinking));
   if (res.status === 404) {
     // המודל הוצא משימוש או שהשם שגוי: מחפשים אוטומטית מודל זמין
     const alt = await discoverModel(key);
     if (alt && alt !== model) {
       console.warn('gemini model not found, switching', model, '->', alt);
       model = alt;
-      res = await callGemini(key, model, body);
+      res = await callGemini(key, model, build(model, thinking));
       if (res.ok) discovered = alt;
     }
+  }
+  if (res.status === 400 && thinking) {
+    // ייתכן שהמודל לא תומך בהגדרת החשיבה. מנסים שוב בלעדיה
+    thinking = false;
+    res = await callGemini(key, model, build(model, thinking));
   }
   if (!res.ok) {
     const text = await res.text().catch(() => '');
@@ -62,11 +83,14 @@ export async function geminiJson<T>(o: { system: string; parts: GeminiPart[]; sc
     throw new UserError(`שירות ה-AI החזיר שגיאה (${res.status}). נסו שוב בעוד רגע`);
   }
   const json = await res.json();
-  const text = json?.candidates?.[0]?.content?.parts?.map((p: { text?: string }) => p.text ?? '').join('') ?? '';
+  const text = (json?.candidates?.[0]?.content?.parts ?? [])
+    .filter((p: { thought?: boolean }) => !p.thought)
+    .map((p: { text?: string }) => p.text ?? '').join('');
   try {
     return JSON.parse(text) as T;
   } catch {
-    throw new UserError('לא ניתן היה לפענח את תשובת ה-AI');
+    console.error('gemini bad json', model, text.slice(0, 300), json?.candidates?.[0]?.finishReason);
+    throw new UserError('לא ניתן היה לפענח את תשובת ה-AI. נסו שוב');
   }
 }
 

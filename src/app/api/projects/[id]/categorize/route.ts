@@ -5,7 +5,7 @@ import { UserError } from '@/lib/action';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
-const BATCH = 40;
+const BATCH = 25;
 
 export async function POST(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -23,13 +23,18 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
       const list = items.map((it, idx) => ({ idx, item: it.item, description: it.description, mpn: it.mpn, manufacturer: it.manufacturer }));
       const results = await categorizeItems(cats, list);
       const byName = new Map(cats.map((c) => [c.name, c.id]));
-      await Promise.all(items.map((it, idx) => {
+      const saved = await Promise.all(items.map((it, idx) => {
         const r = results.find((x) => x.idx === idx);
         const catId = r ? byName.get(r.category) ?? null : null;
         return supabase.from('bom_items').update({
           category_id: catId, category_source: 'ai', category_confidence: catId ? Math.max(0, Math.min(1, r?.confidence ?? 0)) : 0,
         }).eq('id', it.id).eq('project_id', id);
       }));
+      const failed = saved.find((r) => r.error);
+      if (failed?.error) {
+        console.error('categorize save', failed.error.code, failed.error.message);
+        throw new UserError(`שמירת הסיווג נכשלה [${failed.error.code ?? '?'}]`);
+      }
       // קטגוריות שלא דורשות RFQ
       const { data: noRfq } = await supabase.from('categories').select('id').eq('requires_rfq', false);
       if (noRfq?.length) await supabase.from('bom_items').update({ sourcing: 'not_required' })
@@ -41,6 +46,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   } catch (e) {
     if (e instanceof UserError) return NextResponse.json({ error: e.message }, { status: 400 });
     console.error('categorize', e);
-    return NextResponse.json({ error: 'אירעה שגיאה בסיווג' }, { status: 500 });
+    const d = e instanceof Error ? `${e.name}: ${e.message}`.slice(0, 140) : '';
+    return NextResponse.json({ error: `אירעה שגיאה בסיווג${d ? ` (${d})` : ''}` }, { status: 500 });
   }
 }

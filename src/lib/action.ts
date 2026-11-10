@@ -15,7 +15,13 @@ export function must<T>(r: DbResult<T>): NonNullable<T> {
     if (r.error.code === '23503') throw new UserError('לא ניתן לבצע, הרשומה מקושרת לנתונים אחרים');
     if (r.error.code === '23514') throw new UserError('ערך לא תקין');
     console.error('db error', r.error.code, r.error.message);
-    throw new UserError('שגיאת מסד נתונים');
+    const c = r.error.code ?? '';
+    const hint =
+      c === '42703' || c === 'PGRST204' ? 'חסרה עמודה במסד הנתונים. יש להריץ את קובץ ה-SQL של הגרסה האחרונה (supabase/migrations)' :
+      c === '42P01' || c === 'PGRST205' ? 'חסרה טבלה במסד הנתונים. יש להריץ את קובץ ה-SQL של הגרסה האחרונה' :
+      c === '42501' ? 'אין הרשאה (RLS). בדקו שה-SQL הורץ במלואו' :
+      'שגיאת מסד נתונים';
+    throw new UserError(`${hint} [${c || 'ללא קוד'}]`);
   }
   return r.data as NonNullable<T>;
 }

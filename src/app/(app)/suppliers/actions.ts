@@ -43,28 +43,37 @@ export async function saveSupplier(input: z.infer<typeof supplier>) {
     const v = supplier.parse(input);
     const base = { name: v.name, phone: v.phone || null, notes: v.notes || null };
     let id = v.id;
+    const isNew = !id;
     if (id) must(await supabase.from('suppliers').update(base).eq('id', id));
     else id = must(await supabase.from('suppliers').insert(base).select('id').single()).id as string;
+    const sid = id as string;
 
-    // קטגוריות: מוחקים מה שהוסר ומוסיפים חדשות
-    const curCats = must(await supabase.from('supplier_categories').select('category_id').eq('supplier_id', id)) ?? [];
-    const curSet = new Set(curCats.map((r: { category_id: string }) => r.category_id));
-    const remove = [...curSet].filter((c) => !v.category_ids.includes(c));
-    if (remove.length) must(await supabase.from('supplier_categories').delete().eq('supplier_id', id).in('category_id', remove));
-    const add = v.category_ids.filter((c) => !curSet.has(c)).map((category_id) => ({ supplier_id: id, category_id }));
-    if (add.length) must(await supabase.from('supplier_categories').insert(add));
+    try {
+      // קטגוריות: מוחקים מה שהוסר ומוסיפים חדשות
+      const curCats = (must(await supabase.from('supplier_categories').select('category_id').eq('supplier_id', sid)) ?? []) as { category_id: string }[];
+      const curSet = new Set(curCats.map((r) => r.category_id));
+      const wanted = [...new Set(v.category_ids)];
+      const remove = [...curSet].filter((c) => !wanted.includes(c));
+      if (remove.length) must(await supabase.from('supplier_categories').delete().eq('supplier_id', sid).in('category_id', remove));
+      const add = wanted.filter((c) => !curSet.has(c)).map((category_id) => ({ supplier_id: sid, category_id }));
+      if (add.length) must(await supabase.from('supplier_categories').insert(add));
 
-    // כתובות מייל
-    const emails = new Map(v.contacts.map((c) => [c.email, c.name || null]));
-    const curC = must(await supabase.from('supplier_contacts').select('id,email').eq('supplier_id', id)) ?? [];
-    const del = curC.filter((c: { email: string }) => !emails.has(c.email)).map((c: { id: string }) => c.id);
-    if (del.length) must(await supabase.from('supplier_contacts').delete().in('id', del));
-    if (emails.size)
-      must(await supabase.from('supplier_contacts').upsert(
-        [...emails.entries()].map(([email, name]) => ({ supplier_id: id, email, name })),
-        { onConflict: 'supplier_id,email' }
-      ));
-    return id;
+      // כתובות מייל
+      const emails = new Map(v.contacts.map((c) => [c.email, c.name || null]));
+      const curC = (must(await supabase.from('supplier_contacts').select('id,email').eq('supplier_id', sid)) ?? []) as { id: string; email: string }[];
+      const del = curC.filter((c) => !emails.has(c.email)).map((c) => c.id);
+      if (del.length) must(await supabase.from('supplier_contacts').delete().in('id', del));
+      const have = new Set(curC.map((c) => c.email));
+      for (const [email, name] of emails) {
+        if (have.has(email)) must(await supabase.from('supplier_contacts').update({ name }).eq('supplier_id', sid).eq('email', email));
+        else must(await supabase.from('supplier_contacts').insert({ supplier_id: sid, email, name }));
+      }
+    } catch (e) {
+      // ספק חדש שלא נשמר עד הסוף נמחק, כדי שלא יישאר ספק חלקי ולא תהיה שגיאת "כבר קיים" בניסיון הבא
+      if (isNew) await supabase.from('suppliers').delete().eq('id', sid);
+      throw e;
+    }
+    return sid;
   });
 }
 
