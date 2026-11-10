@@ -5,12 +5,14 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        ink: '#1b2430',
-        paper: '#f6f7f9',
-        line: '#dfe3e8',
-        brand: { DEFAULT: '#0f6d7a', dark: '#0a4f59', soft: '#e3f1f3' },
+        ink: '#18222f',
+        paper: '#f4f6f8',
+        line: '#e1e5ea',
+        navy: { DEFAULT: '#0e1b2c', soft: '#16273d', line: '#22364f' },
+        brand: { DEFAULT: '#0f7a89', dark: '#0b5c68', soft: '#e4f3f5' },
       },
-      fontFamily: { sans: ['var(--font-heebo)', 'system-ui', 'sans-serif'] },
+      fontFamily: { sans: ['Heebo', 'system-ui', 'sans-serif'] },
+      boxShadow: { card: '0 1px 2px rgba(16,24,40,.05), 0 1px 3px rgba(16,24,40,.06)' },
     },
   },
   plugins: [],

@@ -1,18 +1,21 @@
 import type { Metadata } from 'next';
-import { Heebo } from 'next/font/google';
 import './globals.css';
-
-const heebo = Heebo({ subsets: ['hebrew', 'latin'], variable: '--font-heebo' });
 
 export const metadata: Metadata = {
   title: 'AMS RFQ',
-  description: 'ניהול הצעות מחיר ורכש',
+  description: 'ניהול רכש והצעות מחיר',
+  robots: { index: false, follow: false },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="he" dir="rtl">
-      <body className={`${heebo.variable} font-sans`}>{children}</body>
+      <head>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;600;700&display=swap" rel="stylesheet" />
+      </head>
+      <body className="font-sans">{children}</body>
     </html>
   );
 }

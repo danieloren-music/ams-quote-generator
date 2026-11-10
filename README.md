@@ -1,33 +1,40 @@
 # AMS RFQ
 
-מערכת לניהול הצעות מחיר ורכש: העלאת BOM, קטלוג אוטומטי עם Gemini, שליחת בקשות לספקים, ופענוח תשובות לחישוב הצעת מחיר.
+מערכת SaaS לניהול רכש והצעות מחיר: העלאת BOM, סיווג אוטומטי עם Gemini, בקשות מחיר לספקים, פענוח תשובות וחישוב הצעת מחיר סופית (מדרגות כמות, MOQ, Burden, Labor, OH, Profit).
 
-**Stack:** Next.js 15 (App Router) · TypeScript · Tailwind · Supabase (Auth, Postgres, Storage) · Gemini · Resend · Vercel
+**Stack:** Next.js 15 · TypeScript · Tailwind · Supabase (Auth + Postgres + Storage) · Gemini · Resend (אופציונלי) · Vercel
 
-## הרצה מקומית
+## הקמה
 
-```bash
-npm install
-cp .env.example .env.local   # ולמלא את הערכים
-npm run dev
-```
+1. **Supabase**: פרויקט חדש → SQL Editor → להריץ את `supabase/schema.sql` (כולל RLS, buckets וקטגוריות ברירת מחדל).
+   - Authentication → Users → ליצור משתמש (אימייל + סיסמה).
+   - Authentication → Sign In / Providers → **לכבות** "Allow new users to sign up".
+2. `cp .env.example .env.local` ולמלא: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `GEMINI_API_KEY`.
+3. `npm install && npm run dev`
+4. **Vercel**: לייבא את ה-repo ולהגדיר אותם משתני סביבה.
 
-## הקמת Supabase
+## זרימת עבודה
 
-1. ליצור פרויקט ב-supabase.com.
-2. ב-SQL Editor להריץ את `supabase/migrations/0001_init.sql`.
-3. ב-Authentication > Users ליצור משתמש (אימייל + סיסמה) עבור המשתמשת. ב-Authentication > Providers מומלץ לכבות הרשמה עצמית (Allow new users to sign up).
-4. להעתיק URL ו-anon key מ-Project Settings > API ל-`.env.local`.
+1. פרויקט חדש → **מפרט טכני**: גרירת BOM (xlsx). הפענוח מזהה כותרות אוטומטית, מחשב כמויות לאורך עץ ה-BOM, ומאחד לפי מק"ט.
+2. **חלוקת קטגוריות**: סיווג עם Gemini (בקבוצות של 40), תיקון בגרירה או ברשימה, פריטים עם ביטחון נמוך מסומנים. ייצוא CSV.
+3. **שליחה לספקים**: בחירת קטגוריה, פריטים וספקים → חלון מייל עריך (עברית/English) → נשלח דרך Resend, או מוכן לפתיחה בתוכנת המייל + קובץ Excel להורדה. לכל ספק קוד ייחודי `RFQ-XXXXXX` בנושא.
+4. **תשובות ספקים**: העלאת EML / PDF / Excel או הדבקת טקסט. הבקשה מזוהה לפי הקוד, Gemini מחלץ מחירים, ואתם מאשרים לפני שהם נכנסים לחישוב.
+5. **הצעת מחיר**: חישוב חי לכל המדרגות, בחירת ספק לכל פריט, סינונים, פרמטרים ניתנים לעריכה, ייצוא Excel.
 
-## פריסה ל-Vercel
+## אבטחה
 
-לחבר את ה-repo ב-vercel.com, ולהגדיר את משתני הסביבה מ-`.env.example`.
+- RLS על כל הטבלאות: כל משתמש רואה רק את הנתונים שלו. לא נעשה שימוש ב-service role.
+- Buckets פרטיים, והנתיב חייב להתחיל ב-`<user_id>/`.
+- כל ה-Server Actions בודקים התחברות ומאמתים קלט עם zod. מחיקות דורשות הקלדת מילת אישור, ונבדקות גם בשרת.
+- מפתחות Gemini ו-Resend בצד שרת בלבד.
+- מיילים נשלחים רק לכתובות ששמורות אצל הספק (מונע שימוש כממסר ספאם), נושא המייל מנוקה מ-header injection.
+- Security headers (CSP, HSTS, X-Frame-Options ועוד), CSV בטוח מ-formula injection, בדיקת סוג וגודל קבצים.
+- תוכן מיילים של ספקים מועבר ל-AI כנתונים בלבד, וכל תוצאה עוברת אישור אנושי.
 
-## מפת דרכים
+## מגבלות ידועות
 
-- [x] שלב 1: שלד, Auth, דשבורד פרויקטים, סכמת DB
-- [ ] שלב 2: העלאת BOM ל-Storage ופענוח Excel
-- [ ] שלב 3: קטלוג עם Gemini + ייצוא CSV
-- [ ] שלב 4: ניהול ספקים ושליחה
-- [ ] שלב 5: העלאה ידנית של תשובות (PDF / EML) ופענוח
-- [ ] שלב 6: חישוב הצעת מחיר
+- העלאת קבצים עד 4MB (מגבלת Vercel).
+- מיילים נכנסים אוטומטית (Inbound) דורשים דומיין; כרגע התשובות מועלות ידנית.
+- שליחה ישירה דרך Resend דורשת דומיין מאומת (`RESEND_FROM`).
+- ייצוא ה-Excel מכיל ערכים מחושבים, לא נוסחאות חיות.
+- המערכת מבוססת משתמש יחיד לכל נתונים (אין עדיין ארגונים/צוותים). נדרש לפני מכירה כ-SaaS.

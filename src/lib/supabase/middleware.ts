@@ -19,8 +19,12 @@ export async function updateSession(request: NextRequest) {
   );
 
   const { data: { user } } = await supabase.auth.getUser();
-  const isLogin = request.nextUrl.pathname.startsWith('/login');
+  const path = request.nextUrl.pathname;
+  const isLogin = path.startsWith('/login');
 
+  if (!user && path.startsWith('/api')) {
+    return NextResponse.json({ error: 'נדרשת התחברות' }, { status: 401 });
+  }
   if (!user && !isLogin) {
     const url = request.nextUrl.clone();
     url.pathname = '/login';
