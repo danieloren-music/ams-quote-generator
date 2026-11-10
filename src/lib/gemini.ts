@@ -2,28 +2,62 @@ import { UserError } from './action';
 
 export type GeminiPart = { text: string } | { inlineData: { mimeType: string; data: string } };
 
+const BASE = 'https://generativelanguage.googleapis.com/v1beta';
+let discovered: string | null = null; // מודל שנמצא אוטומטית (נשמר בזיכרון השרת)
+
+/** מוצא את מודל ה-Flash היציב והחדש ביותר שזמין למפתח, כך שהמערכת לא נשברת כשמודל יוצא משימוש */
+async function discoverModel(key: string): Promise<string | null> {
+  const res = await fetch(`${BASE}/models?pageSize=200`, { headers: { 'x-goog-api-key': key }, signal: AbortSignal.timeout(15_000) }).catch(() => null);
+  if (!res?.ok) return null;
+  const json = (await res.json().catch(() => null)) as { models?: { name: string; supportedGenerationMethods?: string[] }[] } | null;
+  const names = (json?.models ?? [])
+    .filter((m) => m.supportedGenerationMethods?.includes('generateContent'))
+    .map((m) => m.name.replace(/^models\//, ''));
+  const rank = (re: RegExp) => names
+    .map((n) => ({ n, m: n.match(re) }))
+    .filter((x) => x.m)
+    .sort((a, b) => parseFloat(b.m![1]) - parseFloat(a.m![1]))[0]?.n;
+  return rank(/^gemini-(\d+(?:\.\d+)?)-flash$/) ?? rank(/^gemini-(\d+(?:\.\d+)?)-flash-lite$/)
+    ?? names.find((n) => n === 'gemini-flash-latest') ?? null;
+}
+
+async function callGemini(key: string, model: string, body: unknown) {
+  return fetch(`${BASE}/models/${encodeURIComponent(model)}:generateContent`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(55_000),
+  });
+}
+
 /** קריאה ל-Gemini עם פלט JSON מובנה. רץ בצד שרת בלבד; המפתח לא נחשף ללקוח. */
 export async function geminiJson<T>(o: { system: string; parts: GeminiPart[]; schema: unknown }): Promise<T> {
   const key = process.env.GEMINI_API_KEY;
   if (!key) throw new UserError('לא הוגדר GEMINI_API_KEY בשרת');
-  const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
-  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
-    body: JSON.stringify({
-      systemInstruction: { parts: [{ text: o.system }] },
-      contents: [{ role: 'user', parts: o.parts }],
-      generationConfig: { responseMimeType: 'application/json', responseSchema: o.schema, temperature: 0 },
-    }),
-    signal: AbortSignal.timeout(55_000),
-  });
+  let model = discovered || process.env.GEMINI_MODEL || 'gemini-flash-latest';
+  const body = {
+    systemInstruction: { parts: [{ text: o.system }] },
+    contents: [{ role: 'user', parts: o.parts }],
+    generationConfig: { responseMimeType: 'application/json', responseSchema: o.schema, temperature: 0 },
+  };
+  let res = await callGemini(key, model, body);
+  if (res.status === 404) {
+    // המודל הוצא משימוש או שהשם שגוי: מחפשים אוטומטית מודל זמין
+    const alt = await discoverModel(key);
+    if (alt && alt !== model) {
+      console.warn('gemini model not found, switching', model, '->', alt);
+      model = alt;
+      res = await callGemini(key, model, body);
+      if (res.ok) discovered = alt;
+    }
+  }
   if (!res.ok) {
-    const body = await res.text().catch(() => '');
-    console.error('gemini http', res.status, model, body.slice(0, 500));
-    if (res.status === 400 && /API key/i.test(body)) throw new UserError('מפתח GEMINI_API_KEY לא תקין. בדקו אותו ב-Vercel והריצו Redeploy');
+    const text = await res.text().catch(() => '');
+    console.error('gemini http', res.status, model, text.slice(0, 500));
+    if (res.status === 400 && /API key/i.test(text)) throw new UserError('מפתח GEMINI_API_KEY לא תקין. בדקו אותו ב-Vercel והריצו Redeploy');
     if (res.status === 400) throw new UserError(`בקשה לא תקינה ל-AI (מודל: ${model}). בדקו את GEMINI_MODEL`);
     if (res.status === 401 || res.status === 403) throw new UserError('למפתח GEMINI_API_KEY אין הרשאה. ודאו שהמפתח פעיל ב-Google AI Studio');
-    if (res.status === 404) throw new UserError(`המודל "${model}" לא נמצא. בדקו את GEMINI_MODEL`);
+    if (res.status === 404) throw new UserError(`לא נמצא מודל Gemini זמין למפתח הזה (ניסיתי "${model}"). הגדירו GEMINI_MODEL לשם מודל מ-Google AI Studio`);
     if (res.status === 429) throw new UserError('חרגתם ממכסת ה-AI. נסו שוב בעוד דקה');
     throw new UserError(`שירות ה-AI החזיר שגיאה (${res.status}). נסו שוב בעוד רגע`);
   }
