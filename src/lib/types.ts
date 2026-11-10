@@ -28,9 +28,19 @@ export interface Supplier {
   category_ids: string[];
 }
 
+export interface Customer {
+  id: string;
+  name: string;
+  contact_name: string | null;
+  email: string | null;
+  phone: string | null;
+  notes: string | null;
+}
+
 export interface Project {
   id: string;
   name: string;
+  customer_id: string | null;
   customer: string | null;
   description: string | null;
   status: 'active' | 'quoted' | 'won' | 'lost' | 'archived';

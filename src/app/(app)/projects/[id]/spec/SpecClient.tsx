@@ -1,7 +1,7 @@
 'use client';
 
 import { useRef, useState } from 'react';
-import { Download, FileSpreadsheet, Pencil, Plus, Search, Trash2, UploadCloud } from 'lucide-react';
+import { CheckCircle2, Download, FileSpreadsheet, Pencil, Plus, Search, Trash2, UploadCloud, X } from 'lucide-react';
 import ConfirmDelete from '@/components/ConfirmDelete';
 import Modal from '@/components/Modal';
 import { Badge, Empty } from '@/components/ui';
@@ -9,7 +9,9 @@ import { useAction } from '@/components/useAction';
 import { toast } from '@/lib/toast';
 import { cn, dateHe, num } from '@/lib/format';
 import { SOURCING_LABELS, type BomItem, type Category, type Sourcing } from '@/lib/types';
+import { FIELD_LABELS, colLetter, type ImportSummary, type MappingInput, type MappingRequest } from '@/lib/bom-fields';
 import { deleteBomFile, deleteItems, getBomFileUrl, saveItem } from '../bom-actions';
+import MappingModal from './MappingModal';
 
 type F = { id: string; file_name: string; size_bytes: number | null; created_at: string };
 
@@ -23,18 +25,29 @@ export default function SpecClient({ projectId, items, files, categories }: { pr
   const [del, setDel] = useState<BomItem | null>(null);
   const [delFile, setDelFile] = useState<F | null>(null);
   const [confirmReplace, setConfirmReplace] = useState<File | null>(null);
+  const [sheetMode, setSheetMode] = useState<'auto' | 'all'>('auto');
+  const [summary, setSummary] = useState<ImportSummary | null>(null);
+  const [mapReq, setMapReq] = useState<{ req: MappingRequest; file: File; repl: boolean } | null>(null);
   const input = useRef<HTMLInputElement>(null);
   const cat = (id: string | null) => categories.find((c) => c.id === id);
 
-  async function upload(file: File, repl: boolean) {
+  async function upload(file: File, repl: boolean, mapping?: MappingInput) {
     setBusy(true);
     try {
       const fd = new FormData();
       fd.append('file', file);
       if (repl) fd.append('replace', '1');
+      fd.append('sheet', sheetMode);
+      if (mapping) fd.append('mapping', JSON.stringify(mapping));
       const res = await fetch(`/api/projects/${projectId}/bom`, { method: 'POST', body: fd });
       const j = await res.json().catch(() => ({}));
+      if (res.status === 422 && j.needsMapping) {
+        setMapReq({ req: j.needsMapping as MappingRequest, file, repl });
+        return;
+      }
       if (!res.ok) throw new Error(j.error || 'ההעלאה נכשלה');
+      setMapReq(null);
+      setSummary(j as ImportSummary);
       toast(`נקלטו ${j.added} פריטים חדשים${j.updated ? `, עודכנו ${j.updated}` : ''}`);
       router.refresh();
     } catch (e) {
@@ -64,9 +77,17 @@ export default function SpecClient({ projectId, items, files, categories }: { pr
           className={cn('flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed p-10 text-center transition-colors', drag ? 'border-brand bg-brand-soft' : 'border-line hover:bg-paper')}>
           <UploadCloud size={36} className="text-brand" />
           <p className="mt-3 font-medium">{busy ? 'מעבד את הקובץ…' : 'גררו לכאן קובץ BOM (Excel) או לחצו לבחירה'}</p>
-          <p className="mt-1 text-xs text-ink/50">.xlsx עד 4MB · הקובץ נשמר בענן והפריטים מפוענחים אוטומטית</p>
+          <p className="mt-1 text-xs text-ink/50">.xlsx עד 4MB · הקובץ נשמר בענן, והעמודות (מק"ט, כמות, רמה…) מזוהות אוטומטית</p>
           <input ref={input} type="file" accept=".xlsx" hidden onChange={(e) => { onFile(e.target.files?.[0]); e.target.value = ''; }} />
         </div>
+        <label className="mt-3 flex flex-wrap items-center gap-2 text-sm text-ink/70">
+          גיליונות בקובץ:
+          <select className="input w-auto py-1" value={sheetMode} onChange={(e) => setSheetMode(e.target.value as 'auto' | 'all')}>
+            <option value="auto">אוטומטי (הגיליון עם הכי הרבה שורות)</option>
+            <option value="all">איחוד כל הגיליונות</option>
+          </select>
+        </label>
+        {summary && <ImportReport s={summary} onClose={() => setSummary(null)} />}
         {items.length > 0 && (
           <label className="mt-3 flex items-center gap-2 text-sm text-ink/70">
             <input type="checkbox" checked={replace} onChange={(e) => setReplace(e.target.checked)} />
@@ -127,6 +148,10 @@ export default function SpecClient({ projectId, items, files, categories }: { pr
         )}
       </section>
 
+      {mapReq && (
+        <MappingModal req={mapReq.req} busy={busy} onClose={() => setMapReq(null)}
+          onConfirm={(m) => upload(mapReq.file, mapReq.repl, m)} />
+      )}
       {edit && <ItemModal projectId={projectId} init={edit} categories={categories} onClose={() => setEdit(null)} />}
       <ConfirmDelete open={!!del} onClose={() => setDel(null)} busy={pending} phrase={del?.item ?? ''} title="מחיקת פריט"
         description="הפריט והצעות המחיר שלו יימחקו."
@@ -137,6 +162,25 @@ export default function SpecClient({ projectId, items, files, categories }: { pr
       <ConfirmDelete open={!!confirmReplace} onClose={() => setConfirmReplace(null)} phrase="החלפה" title="החלפת כל הפריטים"
         description="כל הפריטים הקיימים, כולל קטגוריות, עלויות והצעות מחיר, יימחקו ויוחלפו בתוכן הקובץ החדש."
         onConfirm={() => { const f = confirmReplace!; setConfirmReplace(null); upload(f, true); }} />
+    </div>
+  );
+}
+
+function ImportReport({ s, onClose }: { s: ImportSummary; onClose: () => void }) {
+  return (
+    <div className="mt-3 rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-900">
+      <div className="flex items-start gap-2">
+        <CheckCircle2 size={16} className="mt-0.5 shrink-0" />
+        <div className="min-w-0 flex-1 space-y-1">
+          <p className="font-medium">נקלט מהגיליון "{s.sheet}": {s.rows} שורות, {s.added} פריטים חדשים{s.updated ? `, ${s.updated} עודכנו` : ''}</p>
+          <p className="text-xs text-green-800/80">
+            עמודות שזוהו: {s.detected.map((d) => `${FIELD_LABELS[d.field]} ← ${d.header || colLetter(Number(d.column))}`).join(' · ')}
+          </p>
+          {s.skippedSheets.length > 0 && <p className="text-xs text-green-800/80">גיליונות שלא נקלטו: {s.skippedSheets.join(', ')}</p>}
+          {s.warnings.map((w) => <p key={w} className="text-xs text-amber-800">⚠ {w}</p>)}
+        </div>
+        <button className="icon-btn h-6 w-6" onClick={onClose} aria-label="סגירה"><X size={14} /></button>
+      </div>
     </div>
   );
 }

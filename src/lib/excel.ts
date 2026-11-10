@@ -1,5 +1,4 @@
 import ExcelJS from 'exceljs';
-import { UserError } from './action';
 import type { Summary } from './pricing';
 
 /* ---------- עזרים ---------- */
@@ -14,110 +13,6 @@ export function cellText(v: any): string {
     return '';
   }
   return String(v).trim();
-}
-
-const norm = (s: string) => s.toLowerCase().replace(/["'`״׳]/g, '').replace(/\s+/g, ' ').trim();
-
-const COLS: Record<string, string[]> = {
-  level: ['level', 'lvl', 'רמה', 'רמה בעץ'],
-  qty: ['quantity', 'qty', 'כמות', 'יחס לאב'],
-  item: ['item', 'part number', 'part no', 'part', 'p/n', 'pn', 'מקט', 'מקט לקוח'],
-  rev: ['revision', 'rev', 'רויזיה'],
-  desc: ['description', 'desc', 'תיאור', 'תאור מוצר'],
-  uom: ['uom', 'יחידת מידה'],
-  mpn: ['mpn', 'manufacturer part number'],
-  mfr: ['manufacturer', 'mfr', 'יצרן'],
-};
-
-export interface ParsedItem {
-  item: string;
-  revision: string | null;
-  description: string | null;
-  uom: string | null;
-  mpn: string | null;
-  manufacturer: string | null;
-  level: number;
-  total_qty: number;
-  occurrences: number;
-  is_assembly: boolean;
-  row_index: number;
-}
-
-export async function parseBom(buf: Buffer): Promise<{ items: ParsedItem[]; rows: number }> {
-  const wb = new ExcelJS.Workbook();
-  try {
-    await wb.xlsx.load(buf as unknown as ArrayBuffer);
-  } catch {
-    throw new UserError('לא ניתן לקרוא את הקובץ. ודאו שזה קובץ Excel (.xlsx) תקין');
-  }
-  const ws = wb.worksheets[0];
-  if (!ws) throw new UserError('הקובץ ריק');
-
-  // איתור שורת כותרות
-  let headerRow = 0;
-  const colIdx: Record<string, number> = {};
-  for (let r = 1; r <= Math.min(25, ws.rowCount) && !headerRow; r++) {
-    const found: Record<string, number> = {};
-    ws.getRow(r).eachCell((cell, c) => {
-      const t = norm(cellText(cell.value));
-      if (!t) return;
-      for (const [k, syn] of Object.entries(COLS)) if (!(k in found) && syn.includes(t)) found[k] = c;
-    });
-    if ('item' in found && ('qty' in found || 'desc' in found)) {
-      headerRow = r;
-      Object.assign(colIdx, found);
-    }
-  }
-  if (!headerRow) throw new UserError('לא זוהתה שורת כותרות עם עמודת Item/מק"ט וכמות. בדקו את הקובץ');
-
-  const get = (row: ExcelJS.Row, k: string) => (colIdx[k] ? cellText(row.getCell(colIdx[k]).value) : '');
-  type R = { item: string; rev: string; desc: string; uom: string; mpn: string; mfr: string; level: number; qty: number; ext: number; asm: boolean; idx: number };
-  const rows: R[] = [];
-  for (let r = headerRow + 1; r <= ws.rowCount; r++) {
-    const row = ws.getRow(r);
-    const item = get(row, 'item');
-    if (!item) continue;
-    const lvl = parseInt(get(row, 'level').replace(/\D/g, ''), 10);
-    const q = parseFloat(get(row, 'qty').replace(',', '.'));
-    rows.push({
-      item: item.slice(0, 120), rev: get(row, 'rev'), desc: get(row, 'desc'), uom: get(row, 'uom'),
-      mpn: get(row, 'mpn'), mfr: get(row, 'mfr'),
-      level: Number.isFinite(lvl) && lvl > 0 ? lvl : 1,
-      qty: Number.isFinite(q) && q >= 0 ? q : 1, ext: 0, asm: false, idx: r,
-    });
-  }
-  if (!rows.length) throw new UserError('לא נמצאו שורות פריטים בקובץ');
-  if (rows.length > 5000) throw new UserError('הקובץ גדול מדי (מעל 5,000 שורות)');
-
-  // כמות מצטברת לאורך העץ + זיהוי הרכבות
-  const mult: number[] = [];
-  rows.forEach((r, i) => {
-    const parent = r.level > 1 ? mult[r.level - 1] ?? 1 : 1;
-    r.ext = r.qty * parent;
-    mult[r.level] = r.ext;
-    const next = rows[i + 1];
-    r.asm = !!next && next.level > r.level;
-  });
-
-  // איחוד לפי מק"ט
-  const map = new Map<string, ParsedItem>();
-  for (const r of rows) {
-    const key = r.item.toUpperCase();
-    const ex = map.get(key);
-    if (ex) {
-      ex.total_qty += r.ext;
-      ex.occurrences += 1;
-      ex.level = Math.min(ex.level, r.level);
-      ex.is_assembly = ex.is_assembly || r.asm;
-    } else {
-      map.set(key, {
-        item: r.item, revision: r.rev || null, description: r.desc || null, uom: r.uom || null,
-        mpn: r.mpn || null, manufacturer: r.mfr || null, level: r.level, total_qty: r.ext,
-        occurrences: 1, is_assembly: r.asm, row_index: r.idx,
-      });
-    }
-  }
-  return { items: [...map.values()], rows: rows.length };
 }
 
 /* ---------- קובץ RFQ לספק ---------- */

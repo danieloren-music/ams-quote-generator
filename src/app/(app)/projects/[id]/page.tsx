@@ -1,18 +1,19 @@
 import Link from 'next/link';
 import { Check, Circle } from 'lucide-react';
 import { createClient } from '@/lib/supabase/server';
-import type { Project } from '@/lib/types';
+import type { Customer, Project } from '@/lib/types';
 import OverviewForm from './OverviewForm';
 
 export default async function ProjectOverview({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const supabase = await createClient();
-  const [{ data: p }, { data: items }, { data: quotes }, { count: rfqs }, { count: replied }] = await Promise.all([
+  const [{ data: p }, { data: items }, { data: quotes }, { count: rfqs }, { count: replied }, { data: customers }] = await Promise.all([
     supabase.from('projects').select('*').eq('id', id).single(),
     supabase.from('bom_items').select('id,category_id,sourcing').eq('project_id', id),
     supabase.from('quotes').select('bom_item_id').eq('project_id', id).eq('selected', true),
     supabase.from('rfqs').select('*', { count: 'exact', head: true }).eq('project_id', id).in('status', ['sent', 'replied']),
     supabase.from('rfqs').select('*', { count: 'exact', head: true }).eq('project_id', id).eq('status', 'replied'),
+    supabase.from('customers').select('id,name').order('name'),
   ]);
   const all = items ?? [];
   const cat = all.filter((i) => i.category_id).length;
@@ -41,7 +42,7 @@ export default async function ProjectOverview({ params }: { params: Promise<{ id
           </Link>
         ))}
       </div>
-      <OverviewForm project={p as unknown as Project} />
+      <OverviewForm project={p as unknown as Project} customers={(customers ?? []) as Pick<Customer, 'id' | 'name'>[]} />
     </div>
   );
 }

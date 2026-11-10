@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState } from 'react';
-import { FolderKanban, LayoutDashboard, LogOut, Menu, Settings, Truck, X } from 'lucide-react';
+import { FolderKanban, LayoutDashboard, LogOut, Menu, Settings, Truck, Users, X } from 'lucide-react';
 import { signOut } from '@/app/login/actions';
 import { cn, initials } from '@/lib/format';
 import Toaster from './Toaster';
@@ -11,6 +11,7 @@ import Toaster from './Toaster';
 const NAV = [
   { href: '/', label: 'לוח בקרה', icon: LayoutDashboard },
   { href: '/projects', label: 'פרויקטים', icon: FolderKanban },
+  { href: '/customers', label: 'לקוחות', icon: Users },
   { href: '/suppliers', label: 'ספקים וקטגוריות', icon: Truck },
   { href: '/settings', label: 'הגדרות', icon: Settings },
 ];

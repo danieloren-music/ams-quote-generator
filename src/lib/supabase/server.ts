@@ -1,5 +1,6 @@
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { cookies } from 'next/headers';
+import { asSessionCookie } from './session';
 
 export async function createClient() {
   const cookieStore = await cookies();
@@ -11,7 +12,7 @@ export async function createClient() {
         getAll: () => cookieStore.getAll(),
         setAll: (list: { name: string; value: string; options: CookieOptions }[]) => {
           try {
-            list.forEach(({ name, value, options }) => cookieStore.set(name, value, options));
+            list.forEach(({ name, value, options }) => cookieStore.set(name, value, asSessionCookie(value, options)));
           } catch {
             // נקרא מ-Server Component; ה-middleware מרענן את ה-session
           }

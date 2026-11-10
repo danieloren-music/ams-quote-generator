@@ -3,26 +3,32 @@
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
-import { action, must, UserError } from '@/lib/action';
+import { action, must, UserError, type Ctx } from '@/lib/action';
 
 const id = z.string().uuid();
 const tiers = z.array(z.number().int().min(1).max(100000)).min(1).max(8);
 
 const info = z.object({
   name: z.string().trim().min(1, 'חסר שם פרויקט').max(160),
-  customer: z.string().trim().max(120).nullable().optional(),
+  customer_id: id.nullable().optional(),
   description: z.string().trim().max(4000).nullable().optional(),
   status: z.enum(['active', 'quoted', 'won', 'lost', 'archived']).optional(),
   tiers: tiers.optional(),
 });
 
+/** שם הלקוח נשמר גם בפרויקט (לתצוגה, לחיפוש ולייצוא), והקישור נבדק מול הלקוחות של המשתמש */
+async function customerName(supabase: Ctx['supabase'], customerId: string | null | undefined): Promise<string | null> {
+  if (!customerId) return null;
+  const c = must(await supabase.from('customers').select('name').eq('id', customerId).single());
+  return c.name as string;
+}
+
 export async function createProject(input: z.infer<typeof info>) {
   const res = await action(async ({ supabase }) => {
     const v = info.parse(input);
-    const { data: s } = await supabase.from('user_settings').select('user_id').maybeSingle();
-    void s;
+    const customer = await customerName(supabase, v.customer_id);
     const row = must(await supabase.from('projects').insert({
-      name: v.name, customer: v.customer || null, description: v.description || null, ...(v.tiers ? { tiers: v.tiers } : {}),
+      name: v.name, customer_id: v.customer_id || null, customer, description: v.description || null, ...(v.tiers ? { tiers: v.tiers } : {}),
     }).select('id').single());
     return row.id as string;
   });
@@ -35,8 +41,9 @@ export async function updateProject(projectId: string, input: z.infer<typeof inf
     id.parse(projectId);
     const v = info.parse(input);
     const sorted = v.tiers ? [...new Set(v.tiers)].sort((a, b) => a - b) : undefined;
+    const customer = await customerName(supabase, v.customer_id);
     must(await supabase.from('projects').update({
-      name: v.name, customer: v.customer || null, description: v.description || null,
+      name: v.name, customer_id: v.customer_id || null, customer, description: v.description || null,
       ...(v.status ? { status: v.status } : {}), ...(sorted ? { tiers: sorted } : {}),
     }).eq('id', projectId));
     revalidatePath('/projects');

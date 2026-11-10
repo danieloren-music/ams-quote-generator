@@ -4,11 +4,11 @@ import { useState } from 'react';
 import { Trash2 } from 'lucide-react';
 import ConfirmDelete from '@/components/ConfirmDelete';
 import { useAction } from '@/components/useAction';
-import { STATUS_LABELS, type Project } from '@/lib/types';
+import { STATUS_LABELS, type Customer, type Project } from '@/lib/types';
 import { deleteProject, updateProject } from '../actions';
 
-export default function OverviewForm({ project }: { project: Project }) {
-  const [f, setF] = useState({ name: project.name, customer: project.customer ?? '', description: project.description ?? '', status: project.status, tiers: project.tiers.join(', ') });
+export default function OverviewForm({ project, customers }: { project: Project; customers: Pick<Customer, 'id' | 'name'>[] }) {
+  const [f, setF] = useState({ name: project.name, customer_id: project.customer_id ?? '', description: project.description ?? '', status: project.status, tiers: project.tiers.join(', ') });
   const [del, setDel] = useState(false);
   const { run, pending } = useAction();
 
@@ -21,7 +21,14 @@ export default function OverviewForm({ project }: { project: Project }) {
         <h2 className="font-semibold">פרטי הפרויקט</h2>
         <div className="grid gap-4 sm:grid-cols-2">
           <div><label className="label" htmlFor="n">שם</label><input id="n" className="input" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></div>
-          <div><label className="label" htmlFor="c">לקוח</label><input id="c" className="input" value={f.customer} onChange={(e) => setF({ ...f, customer: e.target.value })} /></div>
+          <div>
+            <label className="label" htmlFor="c">לקוח</label>
+            <select id="c" className="input" value={f.customer_id} onChange={(e) => setF({ ...f, customer_id: e.target.value })}>
+              <option value="">ללא לקוח</option>
+              {customers.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+            {!project.customer_id && project.customer && !f.customer_id && <p className="mt-1 text-xs text-amber-700">לקוח קודם (טקסט חופשי): {project.customer}. בחרו לקוח מהרשימה כדי לשייך.</p>}
+          </div>
         </div>
         <div><label className="label" htmlFor="d">תיאור וייעוד</label><textarea id="d" className="input" rows={3} value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} /></div>
         <div className="grid gap-4 sm:grid-cols-2">
@@ -38,7 +45,7 @@ export default function OverviewForm({ project }: { project: Project }) {
           </div>
         </div>
         <button className="btn" disabled={pending || !f.name.trim() || !tiersOk}
-          onClick={() => run(() => updateProject(project.id, { name: f.name, customer: f.customer || null, description: f.description || null, status: f.status, tiers: parsedTiers }), { ok: 'נשמר' })}>
+          onClick={() => run(() => updateProject(project.id, { name: f.name, customer_id: f.customer_id || null, description: f.description || null, status: f.status, tiers: parsedTiers }), { ok: 'נשמר' })}>
           שמירת שינויים
         </button>
       </section>

@@ -63,12 +63,26 @@ create table supplier_contacts (
   unique (supplier_id, email)
 );
 
+-- ---------- לקוחות ----------
+create table customers (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade default auth.uid(),
+  name text not null check (char_length(name) between 1 and 120),
+  contact_name text check (char_length(contact_name) <= 120),
+  email text check (char_length(email) <= 200),
+  phone text check (char_length(phone) <= 40),
+  notes text check (char_length(notes) <= 1000),
+  created_at timestamptz not null default now(),
+  unique (user_id, name)
+);
+
 -- ---------- פרויקטים ----------
 create table projects (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade default auth.uid(),
   name text not null check (char_length(name) between 1 and 160),
-  customer text check (char_length(customer) <= 120),
+  customer_id uuid references customers(id) on delete set null,
+  customer text check (char_length(customer) <= 120),  -- שם הלקוח (עותק לתצוגה וייצוא)
   description text check (char_length(description) <= 4000),
   status text not null default 'active' check (status in ('active','quoted','won','lost','archived')),
   tiers int[] not null default '{5,10,20,40,80}',
@@ -199,6 +213,7 @@ alter table suppliers enable row level security;
 alter table supplier_categories enable row level security;
 alter table supplier_contacts enable row level security;
 alter table projects enable row level security;
+alter table customers enable row level security;
 
 create policy "own settings" on user_settings for all
   using (user_id = auth.uid()) with check (user_id = auth.uid());
@@ -206,8 +221,12 @@ create policy "own categories" on categories for all
   using (user_id = auth.uid()) with check (user_id = auth.uid());
 create policy "own suppliers" on suppliers for all
   using (user_id = auth.uid()) with check (user_id = auth.uid());
-create policy "own projects" on projects for all
+create policy "own customers" on customers for all
   using (user_id = auth.uid()) with check (user_id = auth.uid());
+create policy "own projects" on projects for all
+  using (user_id = auth.uid())
+  with check (user_id = auth.uid()
+    and (customer_id is null or exists (select 1 from customers c where c.id = customer_id and c.user_id = auth.uid())));
 
 create policy "own supplier_categories" on supplier_categories for all
   using (user_id = auth.uid())
