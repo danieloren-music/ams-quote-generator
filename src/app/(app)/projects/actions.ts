@@ -45,9 +45,14 @@ export async function createProject(input: z.infer<typeof info>) {
     const inserted = await supabase.from('projects').insert({
       name: v.name, customer_id: customerId, customer, description: v.description || null, ...(v.tiers ? { tiers: v.tiers } : {}),
     }).select('id').single();
-    if (inserted.error) {
-      if (createdCustomerId) await supabase.from('customers').delete().eq('id', createdCustomerId);
-      must(inserted);
+    if (inserted.error || !inserted.data) {
+      // If project creation failed, do not leave behind an orphan customer
+      // that was created only for this project.
+      if (createdCustomerId) {
+        await supabase.from('customers').delete().eq('id', createdCustomerId);
+      }
+      if (inserted.error) throw inserted.error;
+      throw new UserError('יצירת הפרויקט נכשלה: לא התקבל מזהה פרויקט ממסד הנתונים.');
     }
     revalidatePath('/projects');
     revalidatePath('/customers');
