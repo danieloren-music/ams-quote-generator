@@ -11,6 +11,7 @@ const tiers = z.array(z.number().int().min(1).max(100000)).min(1).max(8);
 const info = z.object({
   name: z.string().trim().min(1, 'חסר שם פרויקט').max(160),
   customer_id: id.nullable().optional(),
+  customer_name: z.string().trim().max(120).optional().nullable(),
   description: z.string().trim().max(4000).nullable().optional(),
   status: z.enum(['active', 'quoted', 'won', 'lost', 'archived']).optional(),
   tiers: tiers.optional(),
@@ -26,11 +27,31 @@ async function customerName(supabase: Ctx['supabase'], customerId: string | null
 export async function createProject(input: z.infer<typeof info>) {
   const res = await action(async ({ supabase }) => {
     const v = info.parse(input);
-    const customer = await customerName(supabase, v.customer_id);
-    const row = must(await supabase.from('projects').insert({
-      name: v.name, customer_id: v.customer_id || null, customer, description: v.description || null, ...(v.tiers ? { tiers: v.tiers } : {}),
-    }).select('id').single());
-    return row.id as string;
+    let customerId = v.customer_id || null;
+    let createdCustomerId: string | null = null;
+    if (v.customer_name?.trim()) {
+      // Reuse an existing customer with the same name (case-insensitive); otherwise create one.
+      const { data: existing, error: lookupError } = await supabase.from('customers')
+        .select('id,name').ilike('name', v.customer_name.trim()).limit(1).maybeSingle();
+      if (lookupError) throw lookupError;
+      if (existing) customerId = existing.id as string;
+      else {
+        const created = must(await supabase.from('customers').insert({ name: v.customer_name.trim() }).select('id').single());
+        customerId = created.id as string;
+        createdCustomerId = customerId;
+      }
+    }
+    const customer = await customerName(supabase, customerId);
+    const inserted = await supabase.from('projects').insert({
+      name: v.name, customer_id: customerId, customer, description: v.description || null, ...(v.tiers ? { tiers: v.tiers } : {}),
+    }).select('id').single();
+    if (inserted.error) {
+      if (createdCustomerId) await supabase.from('customers').delete().eq('id', createdCustomerId);
+      must(inserted);
+    }
+    revalidatePath('/projects');
+    revalidatePath('/customers');
+    return inserted.data.id as string;
   });
   if (res.ok && res.data) redirect(`/projects/${res.data}`);
   return res;

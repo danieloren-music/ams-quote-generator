@@ -48,3 +48,8 @@
 - שליחה ישירה דרך Resend דורשת דומיין מאומת (`RESEND_FROM`).
 - ייצוא ה-Excel מכיל ערכים מחושבים, לא נוסחאות חיות.
 - המערכת מבוססת משתמש יחיד לכל נתונים (אין עדיין ארגונים/צוותים). נדרש לפני מכירה כ-SaaS.
+
+
+## AMS company logo
+Place the company's square 200 × 200 JPG logo at `public/ams-logo.jpg`.
+The application references it at `/ams-logo.jpg` on the login screen and in the application navigation.

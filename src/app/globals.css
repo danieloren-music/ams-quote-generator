@@ -17,3 +17,12 @@ body { @apply bg-paper text-ink antialiased; }
   .th { @apply whitespace-nowrap px-3 py-2 text-start text-xs font-semibold text-ink/60; }
   .td { @apply px-3 py-2 align-middle text-sm; }
 }
+
+@keyframes ams-login-fade {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.login-fade { animation: ams-login-fade 650ms ease-out both; }
+@media (prefers-reduced-motion: reduce) {
+  .login-fade { animation: none; }
+}

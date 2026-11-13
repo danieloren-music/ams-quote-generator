@@ -16,7 +16,7 @@ export type RfqRow = Pick<Rfq, 'id' | 'ref_code' | 'subject' | 'status' | 'sent_
 type Tpl = { subject: string; body: string };
 
 const mailto = (to: string[], subject: string, body: string) =>
-  `mailto:${to.join(',')}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  `mailto:${to.join(';')}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 const tone = { draft: 'gray', sent: 'amber', replied: 'green', closed: 'gray' } as const;
 
 export default function RfqClient({ projectId, tiers, items, categories, suppliers, rfqs, priced, canSend, templates }: {
@@ -205,6 +205,7 @@ function ComposeModal({ projectId, tiers, category, suppliers, itemIds, canSend,
           <Send size={15} /> {pending ? 'מעבד…' : canSend ? 'שליחה' : 'יצירת מיילים'}
         </button></>}>
       <div className="space-y-4">
+        {!canSend && <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">שליחה אוטומטית עדיין אינה מוגדרת. כרגע ייווצרו טיוטות וקבצים להורדה. כדי לשלוח מתוך המערכת יש להגדיר ב-Vercel את RESEND_API_KEY ואת RESEND_FROM ולבצע Redeploy.</p>}
         <div>
           <span className="label">נמענים</span>
           <ul className="space-y-2">

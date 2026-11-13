@@ -8,7 +8,6 @@ import { Badge, Empty, PageHeader } from '@/components/ui';
 import { useAction } from '@/components/useAction';
 import { dateHe } from '@/lib/format';
 import { STATUS_LABELS, type Customer, type Project } from '@/lib/types';
-import { saveCustomer } from '../customers/actions';
 import { createProject } from './actions';
 
 export default function ProjectsClient({ projects, customers }: { projects: (Project & { items: number })[]; customers: Pick<Customer, 'id' | 'name'>[] }) {
@@ -60,7 +59,7 @@ export default function ProjectsClient({ projects, customers }: { projects: (Pro
 
       <Modal open={open} onClose={() => setOpen(false)} title="פרויקט חדש"
         footer={<><button className="btn-ghost" onClick={() => setOpen(false)}>ביטול</button>
-          <button className="btn" disabled={pending || !f.name.trim()} onClick={() => run(() => createProject({ name: f.name, customer_id: f.customer_id || null, description: f.description || null }), { ok: 'הפרויקט נוצר' })}>יצירה</button></>}>
+          <button className="btn" disabled={pending || !f.name.trim()} onClick={() => run(() => createProject({ name: f.name, customer_id: newCust?.trim() ? null : (f.customer_id || null), customer_name: newCust?.trim() || null, description: f.description || null }), { ok: 'הפרויקט נוצר' })}>יצירה</button></>}>
         <div className="space-y-4">
           <div><label className="label" htmlFor="pn">שם הפרויקט / מק"ט</label><input id="pn" className="input" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} autoFocus /></div>
           <div>
@@ -77,8 +76,7 @@ export default function ProjectsClient({ projects, customers }: { projects: (Pro
             ) : (
               <div className="mt-2 flex gap-2">
                 <input className="input" placeholder="שם הלקוח החדש" value={newCust} onChange={(e) => setNewCust(e.target.value)} autoFocus />
-                <button type="button" className="btn" disabled={pending || !newCust.trim()}
-                  onClick={() => run(() => saveCustomer({ name: newCust }), { ok: 'הלקוח נוסף', onDone: (id) => { if (id) setF((x) => ({ ...x, customer_id: id as string })); setNewCust(null); } })}>הוספה</button>
+                <span className="self-center text-xs text-ink/50">הלקוח ייווצר וישויך אוטומטית בעת יצירת הפרויקט</span>
                 <button type="button" className="btn-ghost" onClick={() => setNewCust(null)}>ביטול</button>
               </div>
             )}

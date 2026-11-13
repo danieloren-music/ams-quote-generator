@@ -26,9 +26,11 @@ export async function createRfqs(projectId: string, input: z.infer<typeof create
     const project = must(await supabase.from('projects').select('name,tiers').eq('id', projectId).single());
     const category = must(await supabase.from('categories').select('name').eq('id', v.category_id).single());
     const settings = (await supabase.from('user_settings').select('email_signature').maybeSingle()).data;
-    const suppliers = must(await supabase.from('suppliers').select('id,name,supplier_contacts(email)').in('id', v.supplier_ids)) as unknown as { id: string; name: string; supplier_contacts: { email: string }[] }[];
+    const suppliers = must(await supabase.from('suppliers').select('id,name,supplier_contacts(email),supplier_categories!inner(category_id)')
+      .in('id', v.supplier_ids).eq('supplier_categories.category_id', v.category_id)) as unknown as { id: string; name: string; supplier_contacts: { email: string }[] }[];
+    if (suppliers.length !== new Set(v.supplier_ids).size) throw new UserError('אחד הספקים שנבחרו אינו משויך לקטגוריה הזו');
     const items = must(await supabase.from('bom_items').select('id,item,revision,description,mpn,manufacturer,total_qty')
-      .eq('project_id', projectId).in('id', v.item_ids).eq('sourcing', 'rfq'));
+      .eq('project_id', projectId).eq('category_id', v.category_id).in('id', v.item_ids).eq('sourcing', 'rfq'));
     if (!items.length) throw new UserError('לא נמצאו פריטים שדורשים הצעת מחיר');
 
     const canSend = resendConfigured();

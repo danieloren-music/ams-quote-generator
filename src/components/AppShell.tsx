@@ -24,7 +24,7 @@ export default function AppShell({ user, children }: { user: { email: string; na
   const sidebar = (
     <div className="flex h-full flex-col bg-navy text-white">
       <div className="flex items-center gap-2 px-5 py-5">
-        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand text-sm font-bold">A</div>
+        <img src="/ams-logo.jpg" alt="AMS" width="40" height="40" className="rounded-lg bg-white p-0.5 object-contain" />
         <div>
           <p className="text-sm font-bold leading-none">AMS RFQ</p>
           <p className="mt-1 text-[11px] text-white/50">ניהול רכש והצעות מחיר</p>
@@ -58,7 +58,7 @@ export default function AppShell({ user, children }: { user: { email: string; na
     <div className="min-h-screen lg:flex">
       <aside className="sticky top-0 hidden h-screen w-64 shrink-0 lg:block">{sidebar}</aside>
       <div className="flex items-center justify-between bg-navy px-4 py-3 text-white lg:hidden">
-        <span className="font-bold">AMS RFQ</span>
+        <span className="flex items-center gap-2 font-bold"><img src="/ams-logo.jpg" alt="AMS" width="30" height="30" className="rounded bg-white p-0.5 object-contain" />AMS RFQ</span>
         <button onClick={() => setOpen(true)} aria-label="תפריט"><Menu size={22} /></button>
       </div>
       {open && (
